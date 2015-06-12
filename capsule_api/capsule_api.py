@@ -1,5 +1,6 @@
 import requests
 import dateutil.parser
+from decimal import Decimal
 
 class Opportunity(dict):
     @property
@@ -13,6 +14,34 @@ class Opportunity(dict):
     @property
     def open(self):
         return 'actualCloseDate' not in self
+
+    @property
+    def probability(self):
+        return int(self['probability'])
+
+    @property
+    def milestoneId(self):
+        return int(self['milestoneId'])
+
+    def __getattr__(self, element):
+        if element in self:
+            return self[element]
+        if hasattr(self, 'customfields') and element in self.customfields:
+            return self.customfields[element]
+        raise AttributeError
+
+    @property
+    def value(self):
+        return Decimal(self['value'])
+
+    @property
+    def weighted_value(self):
+        return self.value * self.probability / 100
+
+
+    def load_customfields_from_api(self, customfields):
+        self.customfields = dict([(x['label'], x['text']) for x in customfields if 'text' in x])
+
 
 class CapsuleAPI(object):
     def __init__(self, capsule_name, capsule_key):
@@ -41,6 +70,16 @@ class CapsuleAPI(object):
         result = self.get('opportunity' + get_options)
         result['opportunities']['opportunity'] = [Opportunity(x) for x in result['opportunities']['opportunity']]
         return result
+
+    def customfields(self, opportunity_id, **kwargs):
+        get_options = ''
+        if kwargs:
+            get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
+        result = self.get('opportunity/' + opportunity_id + '/customfields' + get_options)
+        return result['customFields']['customField']
+
+    def inject_customfields(self, opportunity):
+        return opportunity.load_customfields_from_api(self.customfields(opportunity.id))
 
 if __name__ == '__main__':
     crm = CapsuleAPI("name", "key")
