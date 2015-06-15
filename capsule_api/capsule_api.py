@@ -24,9 +24,11 @@ class Opportunity(dict):
         return int(self['milestoneId'])
 
     def __getattr__(self, element):
+        if element == 'customfields':
+            raise AttributeError
         if element in self:
             return self[element]
-        if hasattr(self, 'customfields') and element in self.customfields:
+        if element in self.customfields:
             return self.customfields[element]
         raise AttributeError
 
