@@ -1,6 +1,9 @@
 import requests
 import dateutil.parser
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+import datetime
+import json
+
 
 class Opportunity(dict):
     @property
@@ -27,6 +30,13 @@ class Opportunity(dict):
     def milestoneId(self):
         return int(self['milestoneId'])
 
+    @property
+    def customfields(self):
+        try:
+            return dict([(x['label'], x['text']) for x in self['customfields'] if 'text' in x])
+        except KeyError:
+            raise AttributeError
+
     def __getattr__(self, element):
         if element == 'customfields':
             raise AttributeError
@@ -49,7 +59,19 @@ class Opportunity(dict):
 
 
     def load_customfields_from_api(self, customfields):
-        self.customfields = dict([(x['label'], x['text']) for x in customfields if 'text' in x])
+        self['customfields'] = [x for x in customfields if 'date' not in x]
+        self['datatags'] = [x for x in customfields if 'date' in x]
+
+    def load_tags_from_api(self, tags):
+        self['tags_id'] = [x for x in tags]
+
+    @property
+    def tags(self):
+        return list([x['name'] for x in self['tags_id']])
+
+    @property
+    def datatags(self):
+        return dict([(x['label'], dateutil.parser.parse(x['date']).date()) for x in self['datatags']])
 
 
     @property
@@ -103,8 +125,24 @@ class CapsuleAPI(object):
         result = self.get('opportunity/' + opportunity_id + '/customfields' + get_options)
         return result['customFields']['customField']
 
+    def tags(self, opportunity_id, **kwargs):
+        get_options = ''
+        if kwargs:
+            get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
+        result = self.get('opportunity/' + opportunity_id + '/tag' + get_options)
+        return result['tags'].get('tag') or []
+
     def inject_customfields(self, opportunity):
         return opportunity.load_customfields_from_api(self.customfields(opportunity.id))
+
+    def inject_tags(self, opportunity):
+        return opportunity.load_tags_from_api(self.tags(opportunity.id))
+
+    def put_datatag(self, opportunity, name, date = None):
+        date = date or datetime.date.today()
+        new_datatag = {'tag':name, 'label':'Date', 'date':date.strftime('%Y-%m-%dT00:00:00Z')}
+        result = {'customFields':{'customField':[new_datatag]}}
+        response = self.put('opportunity/' + opportunity.id + '/customfields', result)
 
 if __name__ == '__main__':
     crm = CapsuleAPI("name", "key")
