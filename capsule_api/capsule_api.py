@@ -38,7 +38,10 @@ class Opportunity(dict):
 
     @property
     def value(self):
-        return Decimal(self['value'])
+        try:
+            return Decimal(self['value'])
+        except KeyError:
+            return Decimal(0)
 
     @property
     def weighted_value(self):
