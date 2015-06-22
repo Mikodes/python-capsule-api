@@ -89,9 +89,12 @@ class CapsuleAPI(object):
         get_options = ''
         if kwargs:
             get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
-        result = self.get('opportunity' + get_options)
-        result['opportunities']['opportunity'] = [Opportunity(x) for x in result['opportunities']['opportunity']]
-        return result
+        result = self.get('opportunity' + get_options)['opportunities'].get('opportunity')
+        if not result:
+            return []
+        if isinstance(result, dict):
+            result = [result]
+        return [Opportunity(x) for x in result]
 
     def customfields(self, opportunity_id, **kwargs):
         get_options = ''
