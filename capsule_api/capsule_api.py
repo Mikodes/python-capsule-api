@@ -12,6 +12,10 @@ class Opportunity(dict):
         return dateutil.parser.parse(self['expectedCloseDate'])
 
     @property
+    def actualCloseDate(self):
+        return dateutil.parser.parse(self['actualCloseDate'])
+
+    @property
     def open(self):
         return 'actualCloseDate' not in self
 
