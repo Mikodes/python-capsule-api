@@ -52,6 +52,14 @@ class Opportunity(dict):
         self.customfields = dict([(x['label'], x['text']) for x in customfields if 'text' in x])
 
 
+    @property
+    def positive_outcome(self):
+        return not self.open and self.probability == 100
+
+    @property
+    def negative_outcome(self):
+        return not self.open and self.probability == 0
+
 class CapsuleAPI(object):
     def __init__(self, capsule_name, capsule_key):
         self.capsule_name = capsule_name
