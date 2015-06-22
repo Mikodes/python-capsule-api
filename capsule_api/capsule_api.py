@@ -66,11 +66,16 @@ class CapsuleAPI(object):
         auth = requests.auth.HTTPBasicAuth(self.capsule_key, self.capsule_name)
         if method.lower() == 'get':
             return requests.get(self.base_url + path , headers=headers, params=kwargs, auth=auth).json()
+        if method.lower() == 'put':
+            return requests.put(self.base_url + path , headers=headers, data=json.dumps(kwargs), auth=auth)
         else:
             raise ValueError
 
     def get(self, path, **kwargs):
         return self.request('get', path, **kwargs)
+
+    def put(self, path, data):
+        return self.request('put', path, **data)
 
     def opportunities(self, **kwargs):
         get_options = ''
