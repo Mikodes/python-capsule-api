@@ -1,9 +1,9 @@
 import requests
 import dateutil.parser
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 import datetime
 import json
-
+from collections import OrderedDict
 
 class Opportunity(dict):
     @property
@@ -12,11 +12,18 @@ class Opportunity(dict):
 
     @property
     def expectedCloseDate(self):
-        return dateutil.parser.parse(self['expectedCloseDate'])
+        try:
+            return dateutil.parser.parse(self['expectedCloseDate'])
+        except KeyError:
+            raise AttributeError
 
     @property
     def actualCloseDate(self):
         return dateutil.parser.parse(self['actualCloseDate'])
+
+    @property
+    def updatedOn(self):
+        return dateutil.parser.parse(self['updatedOn'])
 
     @property
     def open(self):
@@ -33,7 +40,8 @@ class Opportunity(dict):
     @property
     def customfields(self):
         try:
-            return dict([(x['label'], x['text']) for x in self['customfields'] if 'text' in x])
+            custom_fields = self.get('raw_customfields') or self['customfields'] #FIXME attempts old format until all objects are converted to raw_
+            return dict((x['label'], x['text']) for x in custom_fields if 'text' in x)
         except KeyError:
             raise AttributeError
 
@@ -59,8 +67,8 @@ class Opportunity(dict):
 
 
     def load_customfields_from_api(self, customfields):
-        self['customfields'] = [x for x in customfields if 'date' not in x]
-        self['datatags'] = [x for x in customfields if 'date' in x]
+        self['raw_customfields'] = [x for x in customfields if 'date' not in x]
+        self['raw_datatags'] = [x for x in customfields if 'date' in x]
 
     def load_tags_from_api(self, tags):
         self['tags_id'] = [x for x in tags]
@@ -71,8 +79,7 @@ class Opportunity(dict):
 
     @property
     def datatags(self):
-        return dict([(x['label'], dateutil.parser.parse(x['date']).date()) for x in self['datatags']])
-
+        return OrderedDict([(x['label'], dateutil.parser.parse(x['date']).date()) for x in sorted(self['raw_datatags'], key=lambda x:x['date'])])
 
     @property
     def positive_outcome(self):
@@ -81,6 +88,7 @@ class Opportunity(dict):
     @property
     def negative_outcome(self):
         return not self.open and self.probability == 0
+
 
 class CapsuleAPI(object):
     def __init__(self, capsule_name, capsule_key):
@@ -95,7 +103,9 @@ class CapsuleAPI(object):
         }
         auth = requests.auth.HTTPBasicAuth(self.capsule_key, self.capsule_name)
         if method.lower() == 'get':
-            return requests.get(self.base_url + path , headers=headers, params=kwargs, auth=auth).json()
+            result = requests.get(self.base_url + path , headers=headers, params=kwargs, auth=auth)
+            result.raise_for_status()
+            return result.json()
         if method.lower() == 'put':
             return requests.put(self.base_url + path , headers=headers, data=json.dumps(kwargs), auth=auth)
         else:
@@ -118,12 +128,34 @@ class CapsuleAPI(object):
             result = [result]
         return [Opportunity(x) for x in result]
 
+    def full_opportunities(self, **kwargs):
+        opportunities = self.opportunities(**kwargs)
+        for opportunity in opportunities:
+            self.inject_customfields(opportunity)
+            self.inject_tags(opportunity)
+        return opportunities
+
+    def opportunity(self, opportunity_id):
+        result = self.get('opportunity/' + str(opportunity_id))
+        return Opportunity(result['opportunity'])
+
+    def full_opportunity(self, opportunity_id):
+        opportunity=self.opportunity(opportunity_id)
+        self.inject_customfields(opportunity)
+        self.inject_tags(opportunity)
+        return opportunity
+
     def customfields(self, opportunity_id, **kwargs):
         get_options = ''
         if kwargs:
             get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
         result = self.get('opportunity/' + opportunity_id + '/customfields' + get_options)
-        return result['customFields']['customField']
+        if not result['customFields'].get('customField'):
+            return []
+        customfields = result['customFields']['customField']
+        if isinstance(customfields, dict):
+            customfields = [customfields]
+        return customfields
 
     def tags(self, opportunity_id, **kwargs):
         get_options = ''
@@ -144,8 +176,9 @@ class CapsuleAPI(object):
         result = {'customFields':{'customField':[new_datatag]}}
         response = self.put('opportunity/' + opportunity.id + '/customfields', result)
 
+
 if __name__ == '__main__':
-    crm = CapsuleAPI("name", "key")
+    crm = CapsuleAPI()
     print(crm.opportunities())
     
 
