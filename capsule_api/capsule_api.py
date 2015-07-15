@@ -1,22 +1,32 @@
 import requests
+import requests.auth
 import dateutil.parser
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 import datetime
 import json
+from collections import OrderedDict
 
 
 class Opportunity(dict):
+
     @property
     def createdOn(self):
         return dateutil.parser.parse(self['createdOn'])
 
     @property
     def expectedCloseDate(self):
-        return dateutil.parser.parse(self['expectedCloseDate'])
+        try:
+            return dateutil.parser.parse(self['expectedCloseDate'])
+        except KeyError:
+            raise AttributeError
 
     @property
     def actualCloseDate(self):
         return dateutil.parser.parse(self['actualCloseDate'])
+
+    @property
+    def updatedOn(self):
+        return dateutil.parser.parse(self['updatedOn'])
 
     @property
     def open(self):
@@ -33,18 +43,10 @@ class Opportunity(dict):
     @property
     def customfields(self):
         try:
-            return dict([(x['label'], x['text']) for x in self['customfields'] if 'text' in x])
+            custom_fields = self.get('raw_customfields') or self['customfields'] #FIXME attempts old format until all objects are converted to raw_
+            return dict((x['label'], x['text']) for x in custom_fields if 'text' in x)
         except KeyError:
             raise AttributeError
-
-    def __getattr__(self, element):
-        if element == 'customfields':
-            raise AttributeError
-        if element in self:
-            return self[element]
-        if element in self.customfields:
-            return self.customfields[element]
-        raise AttributeError
 
     @property
     def value(self):
@@ -57,22 +59,13 @@ class Opportunity(dict):
     def weighted_value(self):
         return self.value * self.probability / 100
 
-
-    def load_customfields_from_api(self, customfields):
-        self['customfields'] = [x for x in customfields if 'date' not in x]
-        self['datatags'] = [x for x in customfields if 'date' in x]
-
-    def load_tags_from_api(self, tags):
-        self['tags_id'] = [x for x in tags]
-
     @property
     def tags(self):
-        return list([x['name'] for x in self['tags_id']])
+        return list(x['name'] for x in self['tags_id'])
 
     @property
     def datatags(self):
-        return dict([(x['label'], dateutil.parser.parse(x['date']).date()) for x in self['datatags']])
-
+        return OrderedDict((x['label'], dateutil.parser.parse(x['date']).date()) for x in sorted(self['raw_datatags'], key=lambda x: x['date']))
 
     @property
     def positive_outcome(self):
@@ -82,7 +75,26 @@ class Opportunity(dict):
     def negative_outcome(self):
         return not self.open and self.probability == 0
 
+    def load_customfields_from_api(self, customfields):
+        self['raw_customfields'] = [x for x in customfields if 'date' not in x]
+        self['raw_datatags'] = [x for x in customfields if 'date' in x]
+
+    def load_tags_from_api(self, tags):
+        self['tags_id'] = [x for x in tags]
+
+    def __getattr__(self, element):
+        if element == 'customfields':
+            raise AttributeError
+        if element in self:
+            return self[element]
+        if element in self.customfields:
+            return self.customfields[element]
+        raise AttributeError
+
+
 class CapsuleAPI(object):
+    Opportunity = Opportunity
+
     def __init__(self, capsule_name, capsule_key):
         self.capsule_name = capsule_name
         self.capsule_key = capsule_key
@@ -94,10 +106,15 @@ class CapsuleAPI(object):
             'content-type': 'application/json' 
         }
         auth = requests.auth.HTTPBasicAuth(self.capsule_key, self.capsule_name)
-        if method.lower() == 'get':
-            return requests.get(self.base_url + path , headers=headers, params=kwargs, auth=auth).json()
-        if method.lower() == 'put':
-            return requests.put(self.base_url + path , headers=headers, data=json.dumps(kwargs), auth=auth)
+        method = method.lower()
+        if method == 'get':
+            result = requests.get(self.base_url + path, headers=headers, params=kwargs, auth=auth)
+            result.raise_for_status()
+            return result.json()
+        if method in ('put', 'post', 'delete'):
+            result = getattr(requests, method)(self.base_url + path, headers=headers, data=json.dumps(kwargs), auth=auth)
+            result.raise_for_status()
+            return result
         else:
             raise ValueError
 
@@ -107,29 +124,48 @@ class CapsuleAPI(object):
     def put(self, path, data):
         return self.request('put', path, **data)
 
+    def post(self, path, data):
+        return self.request('post', path, **data)
+
+    def delete(self, path, data):
+        return self.request('delete', path, **data)
+
     def opportunities(self, **kwargs):
-        get_options = ''
-        if kwargs:
-            get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
-        result = self.get('opportunity' + get_options)['opportunities'].get('opportunity')
+        result = self.get('opportunity', **kwargs)['opportunities'].get('opportunity')
         if not result:
             return []
         if isinstance(result, dict):
             result = [result]
-        return [Opportunity(x) for x in result]
+        return [self.Opportunity(x) for x in result]
+
+    def full_opportunities(self, **kwargs):
+        opportunities = self.opportunities(**kwargs)
+        for opportunity in opportunities:
+            self.inject_customfields(opportunity)
+            self.inject_tags(opportunity)
+        return opportunities
+
+    def opportunity(self, opportunity_id):
+        result = self.get('opportunity/' + str(opportunity_id))
+        return self.Opportunity(result['opportunity'])
+
+    def full_opportunity(self, opportunity_id):
+        opportunity = self.opportunity(opportunity_id)
+        self.inject_customfields(opportunity)
+        self.inject_tags(opportunity)
+        return opportunity
 
     def customfields(self, opportunity_id, **kwargs):
-        get_options = ''
-        if kwargs:
-            get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
-        result = self.get('opportunity/' + opportunity_id + '/customfields' + get_options)
-        return result['customFields']['customField']
+        result = self.get('opportunity/' + opportunity_id + '/customfields', **kwargs)
+        if not result['customFields'].get('customField'):
+            return []
+        customfields = result['customFields']['customField']
+        if isinstance(customfields, dict):
+            customfields = [customfields]
+        return customfields
 
     def tags(self, opportunity_id, **kwargs):
-        get_options = ''
-        if kwargs:
-            get_options = '?' + "&".join([x + "=" + y for (x,y) in kwargs.items()])
-        result = self.get('opportunity/' + opportunity_id + '/tag' + get_options)
+        result = self.get('opportunity/' + opportunity_id + '/tag', **kwargs)
         return result['tags'].get('tag') or []
 
     def inject_customfields(self, opportunity):
@@ -138,14 +174,8 @@ class CapsuleAPI(object):
     def inject_tags(self, opportunity):
         return opportunity.load_tags_from_api(self.tags(opportunity.id))
 
-    def put_datatag(self, opportunity, name, date = None):
+    def put_datatag(self, opportunity, name, date=None):
         date = date or datetime.date.today()
-        new_datatag = {'tag':name, 'label':'Date', 'date':date.strftime('%Y-%m-%dT00:00:00Z')}
-        result = {'customFields':{'customField':[new_datatag]}}
-        response = self.put('opportunity/' + opportunity.id + '/customfields', result)
-
-if __name__ == '__main__':
-    crm = CapsuleAPI("name", "key")
-    print(crm.opportunities())
-    
-
+        new_datatag = {'tag': name, 'label': 'Date', 'date': date.strftime('%Y-%m-%dT00:00:00Z')}
+        result = {'customFields': {'customField': [new_datatag]}}
+        self.put('opportunity/' + opportunity.id + '/customfields', result)
