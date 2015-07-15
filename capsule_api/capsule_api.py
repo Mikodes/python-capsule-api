@@ -93,6 +93,8 @@ class Opportunity(dict):
 
 
 class CapsuleAPI(object):
+    Opportunity = Opportunity
+
     def __init__(self, capsule_name, capsule_key):
         self.capsule_name = capsule_name
         self.capsule_key = capsule_key
@@ -134,7 +136,7 @@ class CapsuleAPI(object):
             return []
         if isinstance(result, dict):
             result = [result]
-        return [Opportunity(x) for x in result]
+        return [self.Opportunity(x) for x in result]
 
     def full_opportunities(self, **kwargs):
         opportunities = self.opportunities(**kwargs)
@@ -145,7 +147,7 @@ class CapsuleAPI(object):
 
     def opportunity(self, opportunity_id):
         result = self.get('opportunity/' + str(opportunity_id))
-        return Opportunity(result['opportunity'])
+        return self.Opportunity(result['opportunity'])
 
     def full_opportunity(self, opportunity_id):
         opportunity = self.opportunity(opportunity_id)
