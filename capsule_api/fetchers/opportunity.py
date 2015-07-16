@@ -7,7 +7,7 @@ class OpportunityFetcher(object):
         self.obj = obj or dict
 
     def get(self, opportunity_id):
-        result = self.get('opportunity/%d' % int(opportunity_id))
+        result = self._capsule_api.request.get('opportunity/%d' % int(opportunity_id))
         return self.obj(result['opportunity'])
 
     def get_full(self, opportunity_id):
