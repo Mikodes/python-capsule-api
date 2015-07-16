@@ -3,7 +3,7 @@ import datetime
 
 class OpportunityFetcher(object):
     def __init__(self, capsule_api, obj=None):
-        self.capsule_api = capsule_api
+        self._capsule_api = capsule_api
         self.obj = obj or dict
 
     def get(self, opportunity_id):
@@ -17,7 +17,7 @@ class OpportunityFetcher(object):
         return opportunity
 
     def get_list(self, **kwargs):
-        result = self.capsule_api.request.get('opportunity', **kwargs)['opportunities'].get('opportunity')
+        result = self._capsule_api.request.get('opportunity', **kwargs)['opportunities'].get('opportunity')
         if not result:
             return []
         if isinstance(result, dict):
@@ -32,19 +32,19 @@ class OpportunityFetcher(object):
         return opportunities
 
     def get_deleted(self, since):
-        return self.capsule_api.request.get('opportunity/deleted', since=since)
+        return self._capsule_api.request.get('opportunity/deleted', since=since)
 
     def get_contacts(self, opportunity_id):
-        return self.capsule_api.request.get('opportunity/%d/party' % int(opportunity_id))
+        return self._capsule_api.request.get('opportunity/%d/party' % int(opportunity_id))
 
     def get_customfields(self, opportunity_id, **kwargs):
-        return self.capsule_api.customfields.get_list('opportunity', opportunity_id, **kwargs)
+        return self._capsule_api.customfields.get_list('opportunity', opportunity_id, **kwargs)
 
     def get_tags(self, opportunity_id, **kwargs):
-        return self.capsule_api.tags.get_list('opportunity', opportunity_id, **kwargs)
+        return self._capsule_api.tags.get_list('opportunity', opportunity_id, **kwargs)
 
     def get_milestones(self):
-        return self.capsule_api.request.get('opportunity/milestones')
+        return self._capsule_api.request.get('opportunity/milestones')
 
     def post(self, party_id, name, milestone_id, **kwargs):
         kwargs['name'] = name
@@ -53,13 +53,13 @@ class OpportunityFetcher(object):
         params = None
         if track_id:
             params = {'trackId': track_id}
-        return self.capsule_api.request.post('party/%d/opportunity' % int(party_id), kwargs, params=params)
+        return self._capsule_api.request.post('party/%d/opportunity' % int(party_id), kwargs, params=params)
 
     def post_contact(self, opportunity_id, party_id):
-        return self.capsule_api.request.post('opportunity/%d/party/%d' % (int(opportunity_id), int(party_id)))
+        return self._capsule_api.request.post('opportunity/%d/party/%d' % (int(opportunity_id), int(party_id)))
 
     def put(self, opportunity_id, **kwargs):
-        return self.capsule_api.request.put('opportunity/%d' % int(opportunity_id), kwargs)
+        return self._capsule_api.request.put('opportunity/%d' % int(opportunity_id), kwargs)
 
     def put_datatag(self, opportunity, name, date=None):
         # TODO: shift this to customfields fetcher
@@ -69,7 +69,7 @@ class OpportunityFetcher(object):
         self.put('opportunity/' + opportunity.id + '/customfields', result)
 
     def delete(self, opportunity_id):
-        return self.capsule_api.request.delete('opportunity/%d' % int(opportunity_id))
+        return self._capsule_api.request.delete('opportunity/%d' % int(opportunity_id))
 
     def delete_contact(self, opportunity_id, party_id):
         return self.delete('opportunity/%d/party/%d' % (int(opportunity_id), int(party_id)))
