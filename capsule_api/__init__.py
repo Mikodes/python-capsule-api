@@ -13,6 +13,9 @@ class CapsuleAPI(object):
             objects = {}
         objects.setdefault('opportunity', Opportunity)
 
-        self.tags = TagsFetcher(self)
-        self.customfields = CustomFieldsFetcher(self)
-        self.opportunity = OpportunityFetcher(self, objects['opportunity'])
+        if not hasattr(self, 'tags'):
+            self.tags = TagsFetcher(self)
+        if not hasattr(self, 'customfields'):
+            self.customfields = CustomFieldsFetcher(self)
+        if not hasattr(self, 'opportunity'):
+            self.opportunity = OpportunityFetcher(self, objects['opportunity'])
