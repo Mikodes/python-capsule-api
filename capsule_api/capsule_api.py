@@ -1,55 +1,20 @@
-import requests
-import requests.auth
 import datetime
 
 from .models import Opportunity
+from .request import Request
 
 
 class CapsuleAPI(object):
     Opportunity = Opportunity
 
     def __init__(self, capsule_name, capsule_key):
-        self.capsule_name = capsule_name
-        self.capsule_key = capsule_key
-        self.base_url = "https://%s.capsulecrm.com/api/" % capsule_name
+        self.request = Request(capsule_name, capsule_key)
 
-    def request(self, method, path, params=None, **kwargs):
-        headers = {
-            'accept': 'application/json',
-            'content-type': 'application/json' 
-        }
-        auth = requests.auth.HTTPBasicAuth(self.capsule_key, self.capsule_name)
-        method = method.lower()
-        if method == 'get':
-            if params:
-                kwargs.update(params)
-            result = requests.get(self.base_url + path, headers=headers, params=kwargs, auth=auth)
-            result.raise_for_status()
-            return result.json()
-        if method in ('put', 'post', 'delete'):
-            result = getattr(requests, method)(self.base_url + path, headers=headers, json=kwargs, auth=auth, params=params)
-            result.raise_for_status()
-            return result
-        else:
-            raise ValueError
-
-    def get(self, path, params=None, **kwargs):
-        return self.request('get', path, params=params, **kwargs)
-
-    def put(self, path, data=None, params=None):
-        if data:
-            return self.request('put', path, params=params, **data)
-        return self.request('put', path)
-
-    def post(self, path, data=None, params=None):
-        if data:
-            return self.request('post', path, params=params, **data)
-        return self.request('post', path)
-
-    def delete(self, path, data=None, params=None):
-        if data:
-            return self.request('delete', path, params=params, **data)
-        return self.request('delete', path)
+        # TODO: remove these at some point. Directly access self.request.
+        self.get = self.request.get
+        self.post = self.request.post
+        self.put = self.request.put
+        self.delete = self.request.delete
 
     def opportunities(self, **kwargs):
         result = self.get('opportunity', **kwargs)['opportunities'].get('opportunity')
