@@ -86,4 +86,3 @@ class Opportunity(dict):
         if element in self.customfields:
             return self.customfields[element]
         raise AttributeError
-
