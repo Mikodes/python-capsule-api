@@ -40,6 +40,9 @@ class OpportunityFetcher(object):
     def get_customfields(self, opportunity_id, **kwargs):
         return self._capsule_api.customfields.get_list('opportunity', opportunity_id, **kwargs)
 
+    def get_customfield_definitions(self):
+        return self._capsule_api.customfields.get_definitions('opportunity')
+
     def get_tags(self, opportunity_id, **kwargs):
         return self._capsule_api.tags.get_list('opportunity', opportunity_id, **kwargs)
 

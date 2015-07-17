@@ -5,6 +5,7 @@ from .fetchers.opportunity import OpportunityFetcher
 from .fetchers.tags import TagsFetcher
 from .fetchers.party import PartyFetcher
 from .fetchers.history import HistoryFetcher
+from .fetchers.users import UserFetcher
 
 
 class CapsuleAPI(object):
@@ -25,3 +26,5 @@ class CapsuleAPI(object):
             self.party = PartyFetcher(self)
         if not hasattr(self, 'history'):
             self.history = HistoryFetcher(self)
+        if not hasattr(self, 'users'):
+            self.users = UserFetcher(self)

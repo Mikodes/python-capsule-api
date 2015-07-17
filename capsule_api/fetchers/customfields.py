@@ -10,3 +10,6 @@ class CustomFieldsFetcher(object):
         if isinstance(customfields, dict):
             customfields = [customfields]
         return customfields
+
+    def get_definitions(self, area):
+        return self._capsule_api.request.get('%s/customfield/definitions' % area)
