@@ -54,7 +54,7 @@ class OpportunityFetcher(object):
 
     def get_milestones(self):
         resp = self._capsule_api.request.get('opportunity/milestones')
-        milestones = resp['milestones'].get('milestones')
+        milestones = resp['milestones'].get('milestone')
         if not milestones:
             return []
         if isinstance(milestones, dict):
@@ -69,12 +69,15 @@ class OpportunityFetcher(object):
         if track_id:
             params = {'trackId': track_id}
         data = {'opportunity': kwargs}
-        resp = self._capsule_api.request.post('party/%d/opportunity' % int(party_id), params=params, data)
+        resp = self._capsule_api.request.post('party/%d/opportunity' % int(party_id), data, params=params)
         return resp.headers.get('location', '').split('/')[-1]
 
     def post_contact(self, opportunity_id, party_id):
         resp = self._capsule_api.request.post('opportunity/%d/party/%d' % (int(opportunity_id), int(party_id)))
         return resp.headers.get('location', '').split('/')[-1]
+
+    def post_history(self, opportunity_id, **kwargs):
+        resp = self._capsule_api.history.post('opportunity', opportunity_id, **kwargs)
 
     def put(self, opportunity_id, **kwargs):
         data = {'opportunity': kwargs}
