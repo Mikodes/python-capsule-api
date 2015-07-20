@@ -4,4 +4,9 @@ class TagsFetcher(object):
 
     def get_list(self, area, area_id, **kwargs):
         result = self._capsule_api.request.get('%s/%d/tag' % (area, int(area_id)), **kwargs)
-        return result['tags'].get('tag', [])
+        tags = result['tags'].get('tag')
+        if not tags:
+            return []
+        if isinstance(tags, dict):
+            tags = [tags]
+        return tags
