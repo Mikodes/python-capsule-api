@@ -1,32 +1,38 @@
 import requests
 import requests.auth
-import dateutil.parser
 from decimal import Decimal
 import datetime
 import json
 from collections import OrderedDict
 
 
+def capsule_datetime_to_utc_aware(datetime_string):
+    return datetime.datetime.strptime(datetime_string, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
+
+
 class Opportunity(dict):
 
     @property
     def createdOn(self):
-        return dateutil.parser.parse(self['createdOn'])
+        return capsule_datetime_to_utc_aware(self['createdOn'])
 
     @property
     def expectedCloseDate(self):
         try:
-            return dateutil.parser.parse(self['expectedCloseDate'])
+            return capsule_datetime_to_utc_aware(self['expectedCloseDate'])
         except KeyError:
             raise AttributeError
 
     @property
     def actualCloseDate(self):
-        return dateutil.parser.parse(self['actualCloseDate'])
+        try:
+            return capsule_datetime_to_utc_aware(self['actualCloseDate'])
+        except KeyError:
+            raise AttributeError
 
     @property
     def updatedOn(self):
-        return dateutil.parser.parse(self['updatedOn'])
+        return capsule_datetime_to_utc_aware(self['updatedOn'])
 
     @property
     def open(self):
@@ -65,7 +71,10 @@ class Opportunity(dict):
 
     @property
     def datatags(self):
-        return OrderedDict((x['label'], dateutil.parser.parse(x['date']).date()) for x in sorted(self['raw_datatags'], key=lambda x: x['date']))
+        try:
+            return OrderedDict((x.get('tag') or x['label'], capsule_datetime_to_utc_aware(x['date']).date()) for x in sorted(self['raw_datatags'], key=lambda x: x['date']))
+        except KeyError:
+            raise AttributeError
 
     @property
     def positive_outcome(self):
@@ -145,6 +154,9 @@ class CapsuleAPI(object):
             self.inject_tags(opportunity)
         return opportunities
 
+    def delete_opportunity(self, opportunity_id):
+        return self.delete('opportunity/' + str(opportunity_id), {})
+
     def opportunity(self, opportunity_id):
         result = self.get('opportunity/' + str(opportunity_id))
         return self.Opportunity(result['opportunity'])
@@ -179,3 +191,52 @@ class CapsuleAPI(object):
         new_datatag = {'tag': name, 'label': 'Date', 'date': date.strftime('%Y-%m-%dT00:00:00Z')}
         result = {'customFields': {'customField': [new_datatag]}}
         self.put('opportunity/' + opportunity.id + '/customfields', result)
+
+    def post_organisation(self, name, **kwargs):
+        kwargs['name'] = name
+        data = {'organisation': kwargs}
+        resp = self.post('organisation', data)
+        return resp.headers['location'].split('/')[-1]
+
+    def post_person(self, **kwargs):
+        if 'firstName' not in kwargs and 'lastName' not in kwargs:
+            raise ValueError('first_name or last_name must be provided')
+        data = {'person': kwargs}
+        resp = self.post('person', data)
+        return resp.headers['location'].split('/')[-1]
+
+    def post_opportunity(self, name, party_id, milestone_id, **kwargs):
+        kwargs['name'] = name
+        kwargs['milestoneId'] = milestone_id
+        data = {'opportunity': kwargs}
+        resp = self.post('party/%d/opportunity' % int(party_id), data)
+        return resp.headers['location'].split('/')[-1]
+
+    def put_opportunity_customfields(self, opportunity_id, data):
+        if isinstance(data, dict):
+            data = [data]
+        data = {'customFields': {'customField': data}}
+        self.put('opportunity/%d/customfields' % int(opportunity_id), data)
+
+    def post_opportunity_history(self, opportunity_id, **kwargs):
+        data = {'historyItem': kwargs}
+        resp = self.post('opportunity/%d/history' % int(opportunity_id), data)
+        return resp.headers['location'].split('/')[-1]
+
+    def milestones(self):
+        resp = self.get('opportunity/milestones')
+        milestones = resp['milestones'].get('milestone')
+        if not milestones:
+            return []
+        if isinstance(milestones, dict):
+            milestones = [milestones]
+        return milestones
+
+    def users(self):
+        resp = self.get('users')
+        users = resp['users'].get('user')
+        if not users:
+            return []
+        if isinstance(users, dict):
+            users = [users]
+        return users
