@@ -48,9 +48,17 @@ class Opportunity(dict):
 
     @property
     def customfields(self):
+        def to_tuple(entry):
+            if 'text' in entry:
+                return (entry['label'], entry['text'])
+            if 'boolean' in entry:
+                return (entry['label'], entry['boolean'] == 'true')
+            if 'number' in entry:
+                return (entry['label'], entry['number'])
+            raise ValueError
         try:
             custom_fields = self.get('raw_customfields') or self['customfields'] #FIXME attempts old format until all objects are converted to raw_
-            return dict((x['label'], x['text']) for x in custom_fields if 'text' in x)
+            return dict(to_tuple(x) for x in custom_fields)
         except KeyError:
             raise AttributeError
 
