@@ -109,8 +109,65 @@ class Opportunity(dict):
         raise AttributeError
 
 
+class Party(dict):
+
+    @property
+    def id(self):
+        return self['id']
+
+    @property
+    def is_organisation(self):
+        return 'name' in self
+
+    @property
+    def is_person(self):
+        return 'firstName' in self or 'lastName' in self
+
+    @property
+    def name(self):
+        if not self.is_organisation:
+            raise AttributeError('name')
+        return self['name']
+
+    @property
+    def first_name(self):
+        if not self.is_person:
+            raise AttributeError('first_name')
+        return self.get('firstName', '')
+
+    @property
+    def first_name(self):
+        if not self.is_person:
+            raise AttributeError('last_name')
+        return self.get('lastName', '')
+
+    @property
+    def contacts(self):
+        # capsule returns an empty string if no contact details are provided
+        return self['contacts'] or {}
+
+    @property
+    def emails(self):
+        emails = self.contacts.get('email')
+        if not emails:
+            raise AttributeError('emails')
+        if isinstance(emails, dict):
+            emails = [emails]
+        return [e['emailAddress'] for e in emails]
+
+    @property
+    def phone_numbers(self):
+        phone_numbers = self.contacts.get('phone')
+        if not phone_numbers:
+            raise AttributeError('phone_numbers')
+        if isinstance(phone_numbers, dict):
+            phone_numbers = [phone_numbers]
+        return [p['emailAddress'] for p in phone_numbers]
+
+
 class CapsuleAPI(object):
     Opportunity = Opportunity
+    Party = Party
 
     def __init__(self, capsule_name, capsule_key):
         self.capsule_name = capsule_name
@@ -146,6 +203,14 @@ class CapsuleAPI(object):
 
     def delete(self, path, data):
         return self.request('delete', path, **data)
+
+    def get_opportunities_by_party(self, party):
+        result = self.get('party/%d/opportunity' %int(party.id))['opportunities'].get('opportunity')
+        if not result:
+            return []
+        if isinstance(result, dict):
+            result = [result]
+        return [self.Opportunity(x) for x in result]
 
     def opportunities(self, **kwargs):
         result = self.get('opportunity', **kwargs)['opportunities'].get('opportunity')
@@ -220,6 +285,10 @@ class CapsuleAPI(object):
         resp = self.post('party/%d/opportunity' % int(party_id), data)
         return resp.headers['location'].split('/')[-1]
 
+    def put_opportunity(self, opportunity_id, **kwargs):
+        data = {'opportunity': kwargs}
+        self.put('opportunity/%d' % int(opportunity_id), data)
+
     def put_opportunity_customfields(self, opportunity_id, data):
         if isinstance(data, dict):
             data = [data]
@@ -248,3 +317,31 @@ class CapsuleAPI(object):
         if isinstance(users, dict):
             users = [users]
         return users
+
+    def parties(self, **kwargs):
+        result = self.get('party', **kwargs)['parties']
+        people = result.get('person')
+        if not people:
+            people = []
+        if isinstance(people, dict):
+            people = [people]
+
+        organisations = result.get('organisation')
+        if not organisations:
+            organisations = []
+        if isinstance(organisations, dict):
+            organisations = [organisations]
+        return [self.Party(x) for x in people], [self.Party(x) for x in organisations]
+
+    def party(self, party_id):
+        result = self.get('party/%s' % str(party_id))
+        return self.Party(result.get('person', result['organisation']))
+
+    def people(self, party_id):
+        result = self.get('party/%s/people' % str(party_id))['parties']
+        people = result.get('person')
+        if not people:
+            people = []
+        if isinstance(people, dict):
+            people = [people]
+        return [self.Party(x) for x in people]
