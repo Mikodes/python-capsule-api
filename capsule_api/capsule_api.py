@@ -102,6 +102,10 @@ class Opportunity(dict, CustomFieldsMixin):
     def negative_outcome(self):
         return not self.open and self.probability == 0
 
+    def load_tasks_from_api(self, tasks):
+        if any(x for x in tasks if x.get('opportunityId') != self.id):
+            raise Exception
+        self['raw_tasks'] = tasks
 
     def __getattr__(self, element):
         if element == 'customfields':
@@ -167,11 +171,35 @@ class Party(dict, CustomFieldsMixin):
         if isinstance(phone_numbers, dict):
             phone_numbers = [phone_numbers]
         return [p['emailAddress'] for p in phone_numbers]
+class Task(dict):
+
+    @property
+    def id(self):
+        return self['id']
+
+    @property
+    def description(self):
+        return self['description']
+
+    @property
+    def details(self):
+        return self['details']
+
+    @property
+    def owner(self):
+        return self['owner']
+
+    def __getattr__(self, element):
+        try:
+            return self[element]
+        except KeyError:
+            raise AttributeError(element)
 
 
 class CapsuleAPI(object):
     Opportunity = Opportunity
     Party = Party
+    Task = Task
 
     def __init__(self, capsule_name, capsule_key):
         self.capsule_name = capsule_name
@@ -349,3 +377,24 @@ class CapsuleAPI(object):
         if isinstance(people, dict):
             people = [people]
         return [self.Party(x) for x in people]
+
+    def task(self, task_id):
+        result = self.get('task/%s' % str(task_id))
+        return self.Task(result['task'])
+
+    def tasks(self, **kwargs):
+        result = self.get('tasks', **kwargs)['tasks']['task']
+        if not result:
+            return []
+        if isinstance(result, dict):
+            result = [result]
+        return [self.Task(x) for x in result]
+
+    def complete_task(self, task_id, **kwargs):
+        self.post('task/%d/complete' % int(task_id), {})
+
+    def put_task(self, task_id, **kwargs):
+        data = {'task': kwargs}
+        result = self.put('task/%d' % int(task_id), data).json()
+        return self.Task(result['task'])
+
