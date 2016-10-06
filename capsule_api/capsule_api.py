@@ -310,6 +310,10 @@ class CapsuleAPI(object):
         resp = self.post('person', data)
         return resp.headers['location'].split('/')[-1]
 
+    def put_person(self, person_id, person):
+        data = {'person': person}
+        self.put('person/%d' % int(person_id), data)
+
     def post_opportunity(self, name, party_id, milestone_id, **kwargs):
         kwargs['name'] = name
         kwargs['milestoneId'] = milestone_id
