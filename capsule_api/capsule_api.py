@@ -10,7 +10,44 @@ def capsule_datetime_to_utc_aware(datetime_string):
     return datetime.datetime.strptime(datetime_string, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=datetime.timezone.utc)
 
 
-class Opportunity(dict):
+class CustomFieldsMixin(object):
+    @property
+    def customfields(self):
+        def to_tuple(entry):
+            if 'text' in entry:
+                return (entry['label'], entry['text'])
+            if 'boolean' in entry:
+                return (entry['label'], entry['boolean'] == 'true')
+            if 'number' in entry:
+                return (entry['label'], entry['number'])
+            raise ValueError
+
+        try:
+            custom_fields = self.get('raw_customfields') or self['customfields']  # FIXME attempts old format until all objects are converted to raw_
+            return dict(to_tuple(x) for x in custom_fields)
+        except KeyError:
+            raise AttributeError('customfields')
+
+    @property
+    def datatags(self):
+        try:
+            return OrderedDict((x.get('tag') or x['label'], capsule_datetime_to_utc_aware(x['date']).date()) for x in sorted(self['raw_datatags'], key=lambda x: x['date']))
+        except KeyError:
+            raise AttributeError('datatags')
+
+    @property
+    def tags(self):
+        return list(x['name'] for x in self['tags_id'])
+
+    def load_customfields_from_api(self, customfields):
+        self['raw_customfields'] = [x for x in customfields if 'date' not in x]
+        self['raw_datatags'] = [x for x in customfields if 'date' in x]
+
+    def load_tags_from_api(self, tags):
+        self['tags_id'] = [x for x in tags]
+
+
+class Opportunity(dict, CustomFieldsMixin):
 
     @property
     def createdOn(self):
@@ -47,22 +84,6 @@ class Opportunity(dict):
         return int(self['milestoneId'])
 
     @property
-    def customfields(self):
-        def to_tuple(entry):
-            if 'text' in entry:
-                return (entry['label'], entry['text'])
-            if 'boolean' in entry:
-                return (entry['label'], entry['boolean'] == 'true')
-            if 'number' in entry:
-                return (entry['label'], entry['number'])
-            raise ValueError
-        try:
-            custom_fields = self.get('raw_customfields') or self['customfields'] #FIXME attempts old format until all objects are converted to raw_
-            return dict(to_tuple(x) for x in custom_fields)
-        except KeyError:
-            raise AttributeError
-
-    @property
     def value(self):
         try:
             return Decimal(self['value'])
@@ -74,17 +95,6 @@ class Opportunity(dict):
         return self.value * self.probability / 100
 
     @property
-    def tags(self):
-        return list(x['name'] for x in self['tags_id'])
-
-    @property
-    def datatags(self):
-        try:
-            return OrderedDict((x.get('tag') or x['label'], capsule_datetime_to_utc_aware(x['date']).date()) for x in sorted(self['raw_datatags'], key=lambda x: x['date']))
-        except KeyError:
-            raise AttributeError
-
-    @property
     def positive_outcome(self):
         return not self.open and self.probability == 100
 
@@ -92,12 +102,6 @@ class Opportunity(dict):
     def negative_outcome(self):
         return not self.open and self.probability == 0
 
-    def load_customfields_from_api(self, customfields):
-        self['raw_customfields'] = [x for x in customfields if 'date' not in x]
-        self['raw_datatags'] = [x for x in customfields if 'date' in x]
-
-    def load_tags_from_api(self, tags):
-        self['tags_id'] = [x for x in tags]
 
     def __getattr__(self, element):
         if element == 'customfields':
@@ -109,7 +113,7 @@ class Opportunity(dict):
         raise AttributeError
 
 
-class Party(dict):
+class Party(dict, CustomFieldsMixin):
 
     @property
     def id(self):
