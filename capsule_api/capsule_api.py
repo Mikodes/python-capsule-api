@@ -117,37 +117,52 @@ class Opportunity(dict, CustomFieldsMixin):
         raise AttributeError
 
 
-class Party(dict, CustomFieldsMixin):
+class Phone(dict):
 
     @property
     def id(self):
         return self['id']
 
     @property
-    def is_organisation(self):
-        return 'name' in self
+    def phone_number(self):
+        return self['phoneNumber']
+
+    def __str__(self):
+        return self.phone_number
+
+
+class Email(dict):
 
     @property
-    def is_person(self):
-        return 'firstName' in self or 'lastName' in self
+    def id(self):
+        return self['id']
+
+    @property
+    def email_address(self):
+        return self['emailAddress']
+
+    def __str__(self):
+        return self.email_address
+
+
+class Party(dict, CustomFieldsMixin):
+    Phone = Phone
+    Email = Email
+
+    @property
+    def id(self):
+        return self['id']
 
     @property
     def name(self):
-        if not self.is_organisation:
-            raise AttributeError('name')
-        return self['name']
+        raise NotImplementedError('name')
 
     @property
-    def first_name(self):
-        if not self.is_person:
-            raise AttributeError('first_name')
-        return self.get('firstName', '')
-
-    @property
-    def first_name(self):
-        if not self.is_person:
-            raise AttributeError('last_name')
-        return self.get('lastName', '')
+    def about(self):
+        try:
+            return self['about']
+        except KeyError:
+            raise AttributeError('about')
 
     @property
     def contacts(self):
@@ -161,7 +176,7 @@ class Party(dict, CustomFieldsMixin):
             raise AttributeError('emails')
         if isinstance(emails, dict):
             emails = [emails]
-        return [e['emailAddress'] for e in emails]
+        return [self.Email(e) for e in emails]
 
     @property
     def phone_numbers(self):
@@ -170,7 +185,65 @@ class Party(dict, CustomFieldsMixin):
             raise AttributeError('phone_numbers')
         if isinstance(phone_numbers, dict):
             phone_numbers = [phone_numbers]
-        return [p['emailAddress'] for p in phone_numbers]
+        return [self.Phone(p) for p in phone_numbers]
+
+
+    def __getattr__(self, element):
+        if element == 'customfields':
+            raise AttributeError(element)
+        if element in self:
+            return self[element]
+        if element in self.customfields:
+            return self.customfields[element]
+        raise AttributeError(element)
+
+
+class Person(Party):
+    @property
+    def first_name(self):
+        try:
+            return self['firstName']
+        except KeyError:
+            raise AttributeError('first_name')
+
+    @property
+    def last_name(self):
+        try:
+            return self['lastName']
+        except KeyError:
+            raise AttributeError('last_name')
+
+    @property
+    def name(self):
+        ret = ' '.join(n for n in (
+            getattr(self, 'first_name', None),
+            getattr(self, 'last_name', None)
+        ) if n)
+        if not ret:
+            raise Exception("%s: Party doesn't have first or last name." % self.id)
+        return ret
+
+    @property
+    def title(self):
+        try:
+            return self['title']
+        except KeyError:
+            raise AttributeError('title')
+
+    @property
+    def job_title(self):
+        try:
+            return self['jobTitle']
+        except KeyError:
+            raise AttributeError('job_title')
+
+
+class Organisation(Party):
+    @property
+    def name(self):
+        return self['name']
+
+
 class Task(dict):
 
     @property
@@ -198,7 +271,8 @@ class Task(dict):
 
 class CapsuleAPI(object):
     Opportunity = Opportunity
-    Party = Party
+    Organisation = Organisation
+    Person = Person
     Task = Task
 
     def __init__(self, capsule_name, capsule_key):
@@ -255,8 +329,8 @@ class CapsuleAPI(object):
     def full_opportunities(self, **kwargs):
         opportunities = self.opportunities(**kwargs)
         for opportunity in opportunities:
-            self.inject_customfields(opportunity)
-            self.inject_tags(opportunity)
+            self.inject_opportunity_customfields(opportunity)
+            self.inject_opportunity_tags(opportunity)
         return opportunities
 
     def delete_opportunity(self, opportunity_id):
@@ -268,11 +342,11 @@ class CapsuleAPI(object):
 
     def full_opportunity(self, opportunity_id):
         opportunity = self.opportunity(opportunity_id)
-        self.inject_customfields(opportunity)
-        self.inject_tags(opportunity)
+        self.inject_opportunity_customfields(opportunity)
+        self.inject_opportunity_tags(opportunity)
         return opportunity
 
-    def customfields(self, opportunity_id, **kwargs):
+    def opportunity_customfields(self, opportunity_id, **kwargs):
         result = self.get('opportunity/' + opportunity_id + '/customfields', **kwargs)
         if not result['customFields'].get('customField'):
             return []
@@ -281,15 +355,15 @@ class CapsuleAPI(object):
             customfields = [customfields]
         return customfields
 
-    def tags(self, opportunity_id, **kwargs):
+    def opportunity_tags(self, opportunity_id, **kwargs):
         result = self.get('opportunity/' + opportunity_id + '/tag', **kwargs)
         return result['tags'].get('tag') or []
 
-    def inject_customfields(self, opportunity):
-        return opportunity.load_customfields_from_api(self.customfields(opportunity.id))
+    def inject_opportunity_customfields(self, opportunity):
+        return opportunity.load_customfields_from_api(self.opportunity_customfields(opportunity.id))
 
-    def inject_tags(self, opportunity):
-        return opportunity.load_tags_from_api(self.tags(opportunity.id))
+    def inject_opportunity_tags(self, opportunity):
+        return opportunity.load_tags_from_api(self.opportunity_tags(opportunity.id))
 
     def put_datatag(self, opportunity, name, date=None):
         date = date or datetime.date.today()
@@ -297,16 +371,15 @@ class CapsuleAPI(object):
         result = {'customFields': {'customField': [new_datatag]}}
         self.put('opportunity/' + opportunity.id + '/customfields', result)
 
-    def post_organisation(self, name, **kwargs):
-        kwargs['name'] = name
-        data = {'organisation': kwargs}
+    def post_organisation(self, organisation):
+        data = {'organisation': organisation}
         resp = self.post('organisation', data)
         return resp.headers['location'].split('/')[-1]
 
-    def post_person(self, **kwargs):
-        if 'firstName' not in kwargs and 'lastName' not in kwargs:
+    def post_person(self, person):
+        if 'firstName' not in person and 'lastName' not in person:
             raise ValueError('first_name or last_name must be provided')
-        data = {'person': kwargs}
+        data = {'person': person}
         resp = self.post('person', data)
         return resp.headers['location'].split('/')[-1]
 
@@ -372,8 +445,14 @@ class CapsuleAPI(object):
             users = [users]
         return users
 
-    def parties(self, **kwargs):
-        result = self.get('party', **kwargs)['parties']
+    def parties(self, start=None, limit=None, **kwargs):
+        params = {}
+        if start is not None:
+            params['start'] = start
+        if limit is not None:
+            params['limit'] = limit
+        params.update(kwargs)
+        result = self.get('party', **params)['parties']
         people = result.get('person')
         if not people:
             people = []
@@ -385,11 +464,46 @@ class CapsuleAPI(object):
             organisations = []
         if isinstance(organisations, dict):
             organisations = [organisations]
-        return [self.Party(x) for x in people], [self.Party(x) for x in organisations]
+        return [self.Person(x) for x in people], [self.Organisation(x) for x in organisations]
 
     def party(self, party_id):
         result = self.get('party/%s' % str(party_id))
-        return self.Party(result.get('person', result['organisation']))
+        try:
+            return self.Person(result['person'])
+        except KeyError:
+            return self.Organisation(result['organisation'])
+
+    def full_party(self, party_id):
+        party = self.party(party_id)
+        self.inject_party_customfields(party)
+        return party
+
+    def full_parties(self, start=None, limit=None, **kwargs):
+        people, organisations = self.parties(start=start, limit=limit, **kwargs)
+        for party in people + organisations:
+            self.inject_party_customfields(party)
+        return people, organisations
+
+    def parties_from_opportunity(self, opportunity_id):
+        result = self.get('opportunity/%s/party' % opportunity_id)['parties']
+        people = result.get('person')
+        if not people:
+            people = []
+        if isinstance(people, dict):
+            people = [people]
+
+        organisations = result.get('organisation')
+        if not organisations:
+            organisations = []
+        if isinstance(organisations, dict):
+            organisations = [organisations]
+        return [self.Person(x) for x in people], [self.Organisation(x) for x in organisations]
+
+    def full_parties_from_opportunity(self, opportunity_id):
+        people, organisations = self.parties_from_opportunity(opportunity_id)
+        for party in people + organisations:
+            self.inject_party_customfields(party)
+        return people, organisations
 
     def people(self, party_id):
         result = self.get('party/%s/people' % str(party_id))['parties']
@@ -398,7 +512,25 @@ class CapsuleAPI(object):
             people = []
         if isinstance(people, dict):
             people = [people]
-        return [self.Party(x) for x in people]
+        return [self.Person(x) for x in people]
+
+    def full_people(self, party_id):
+        people = self.people(party_id)
+        for person in people:
+            self.inject_party_customfields(person)
+        return people
+
+    def party_customfields(self, party_id, **kwargs):
+        result = self.get('party/' + party_id + '/customfields', **kwargs)
+        if not result['customFields'].get('customField'):
+            return []
+        customfields = result['customFields']['customField']
+        if isinstance(customfields, dict):
+            customfields = [customfields]
+        return customfields
+
+    def inject_party_customfields(self, party):
+        return party.load_customfields_from_api(self.party_customfields(party.id))
 
     def task(self, task_id):
         result = self.get('task/%s' % str(task_id))
@@ -424,3 +556,10 @@ class CapsuleAPI(object):
         data = {'historyItem': kwargs}
         self.post('opportunity/%d/history' % int(opportunity_id), data)
 
+    def add_additional_party_to_opportunity(self, opportunity_id, party_id):
+        self.post('opportunity/%d/party/%d' % (int(opportunity_id), int(party_id)), {})
+
+    def put_organisation(self, party_id, **kwargs):
+        data = {'organisation': kwargs}
+        result = self.put('organisation/%d' % int(party_id), data).json()
+        return self.Organisation(result['organisation'])
