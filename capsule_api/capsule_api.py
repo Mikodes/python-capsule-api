@@ -336,6 +336,24 @@ class CapsuleAPI(object):
         resp = self.post('opportunity/%d/history' % int(opportunity_id), data)
         return resp.headers['location'].split('/')[-1]
 
+    def get_opportunity_history(self, opportunity_id):
+        result = self.get('opportunity/%d/history' % int(opportunity_id))
+        history = result.get('history', {}).get('historyItem')
+        if not history:
+            return []
+        if isinstance(history, dict):
+            history = [history]
+        return history
+
+    def get_party_history(self, party_id):
+        result = self.get('party/%d/history' % int(party_id))
+        history = result.get('history', {}).get('historyItem')
+        if not history:
+            return []
+        if isinstance(history, dict):
+            history = [history]
+        return history
+
     def milestones(self):
         resp = self.get('opportunity/milestones')
         milestones = resp['milestones'].get('milestone')
@@ -401,4 +419,8 @@ class CapsuleAPI(object):
         data = {'task': kwargs}
         result = self.put('task/%d' % int(task_id), data).json()
         return self.Task(result['task'])
+
+    def post_history_to_opportunity(self, opportunity_id, **kwargs):
+        data = {'historyItem': kwargs}
+        self.post('opportunity/%d/history' % int(opportunity_id), data)
 
